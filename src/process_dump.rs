@@ -4,7 +4,7 @@ use chrono::TimeDelta;
 use iex_parser::iex_tp::{iex_tp_segment as parse_iex_tp_segment, IexTp1Segment, IexTpSegment};
 use iex_parser::message_protocol_ids;
 use iex_parser::tops::{tops_1_6_message, Tops1_6Message};
-use log::warn;
+use log::{error, warn};
 use pcap_parser::data::PacketData;
 use pcap_parser::{Block, Linktype, PcapBlockOwned};
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
@@ -98,26 +98,29 @@ fn parse_iex_tp_1_segment(payload: &[u8]) -> anyhow::Result<IexTp1Segment> {
     Ok(iex_tp_1_segment)
 }
 
-fn parse_tops_messages(
-    segment: IexTp1Segment,
-) -> anyhow::Result<Vec<anyhow::Result<Tops1_6Message<String>>>> {
+fn parse_tops_messages(segment: IexTp1Segment) -> anyhow::Result<Vec<Tops1_6Message<String>>> {
     match segment.message_protocol_id {
         message_protocol_ids::TOPS => {
             Ok(segment
                 .messages
                 .into_iter()
-                .map(|message| {
-                    let (remaining, tops_message) =
-                        tops_1_6_message(message).map_err(|e| anyhow!(format!("{}", e)))?;
+                .filter_map(|message| {
+                    match tops_1_6_message(message) {
+                        Ok((remaining, tops_message)) => {
+                            // Check there is no remaining data, which means the parser is probably outdated
+                            if !remaining.is_empty() {
+                                warn!(remaining:?;
+                                    "There is remaining data after the TOPS message",
+                                );
+                            }
 
-                    // Check there is no remaining data, which means the parser is probably outdated
-                    if !remaining.is_empty() {
-                        warn!(remaining:?;
-                            "There is remaining data after the TOPS message",
-                        );
+                            Some(tops_message)
+                        }
+                        Err(e) => {
+                            error!("{:#}", e);
+                            None
+                        }
                     }
-
-                    Ok(tops_message)
                 })
                 .collect())
         }
@@ -130,9 +133,7 @@ fn parse_tops_messages(
 }
 
 /// Parse TOPS/IEX TP/UDP/IP/Ethernet packets
-fn parse_packet(
-    packet_data: Option<PacketData>,
-) -> anyhow::Result<Vec<anyhow::Result<Tops1_6Message<String>>>> {
+fn parse_packet(packet_data: Option<PacketData>) -> anyhow::Result<Vec<Tops1_6Message<String>>> {
     let frame = extract_l2_frame(packet_data)?;
 
     // Parse data-link layer data
@@ -154,7 +155,7 @@ fn parse_packet(
 fn parse_block(
     block: &PcapBlockOwned,
     if_linktypes: &mut Vec<Linktype>,
-) -> Result<Option<Vec<Result<Tops1_6Message<String>, anyhow::Error>>>, anyhow::Error> {
+) -> anyhow::Result<Option<Vec<Tops1_6Message<String>>>> {
     match block {
         PcapBlockOwned::NG(a) => match a {
             // Handle packets
@@ -221,7 +222,7 @@ pub(crate) async fn extract_tops_messages(dump: &DumpMetadata) -> anyhow::Result
                 match parse_block(block, if_linktypes) {
                     Ok(Some(block)) => {
                         for m in block {
-                            if let Ok(Tops1_6Message::QuoteUpdate(u)) = m {
+                            if let Tops1_6Message::QuoteUpdate(u) = m {
                                 if let Some(cool) =
                                     meta_aggregator.report(&u.symbol, u.ask_price, u.timestamp)
                                 {
