@@ -3,7 +3,7 @@ use async_compression::tokio::bufread::GzipDecoder;
 use chrono::TimeDelta;
 use iex_parser::iex_tp::{iex_tp_segment as parse_iex_tp_segment, IexTpSegment};
 use iex_parser::message_protocol_ids;
-use iex_parser::tops::{tops_1_6_message, QuoteUpdate, Tops1_6Message};
+use iex_parser::tops::{tops_1_6_message, Tops1_6Message};
 use log::warn;
 use pcap_parser::data::PacketData;
 use pcap_parser::{Block, Linktype, PcapBlockOwned};

@@ -2,11 +2,8 @@ use std::io::Read;
 
 use anyhow::bail;
 use pcap_parser::{
-    traits::{PcapNGPacketBlock, PcapReaderIterator},
-    Block, PcapBlockOwned, PcapError, PcapNGReader,
+    traits::PcapReaderIterator, PcapBlockOwned, PcapError, PcapNGReader,
 };
-use tokio::sync::Semaphore;
-use tokio_util::io::SyncIoBridge;
 
 pub fn for_each_block<R, F, S>(input: R, handler: F, initial_state: S) -> anyhow::Result<()>
 where
