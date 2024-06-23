@@ -4,3 +4,23 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.86"
+async-compression = { version = "0.4.10", features = ["tokio", "gzip"] }
+chrono = { version = "0.4.38", features = ["serde"] }
+clap = { version = "4.5.4", features = ["derive"] }
+flexi_logger = { version = "0.28.0", features = ["async"] }
+futures = "0.3.30"
+futures-util = { version = "0.3.30", features = ["tokio-io", "io"] }
+iex-parser = { git = "https://github.com/AmitDIRTYC0W/iex-parser-rs.git", version = "0.1.0" }
+indicatif = "0.17.8"
+isahc = { version = "1.7.2", features = ["json"] }
+log = { version = "0.4.21", features = ["kv", "kv_std", "kv_serde"] }
+num-traits = "0.2.19"
+pcap-parser = { git = "https://github.com/rusticata/pcap-parser.git", version = "0.16.0", features = ["data"] }
+pin-project = "1.1.5"
+pnet = "0.35.0"
+pretty-hex = "0.4.1"
+serde = { version = "1.0.202", features = ["derive"] }
+serde_json = "1.0.117"
+tokio = { version = "1.37.0", features = ["full"] }
+tokio-util = { version = "0.7.11", features = ["compat", "io", "io-util"] }

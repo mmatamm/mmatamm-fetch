@@ -1,1 +1,8 @@
 /target
+
+# Ignore profiling data
+**/perf.data
+profile/*
+
+# Ignore logs
+**/*.log
