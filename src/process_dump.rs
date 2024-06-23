@@ -32,7 +32,7 @@ fn parse_packet(
 
     // Parse data-link layer data
     let ethernet_packet =
-        EthernetPacket::new(&frame).context("Failed to parse an Ethernet packet")?;
+        EthernetPacket::new(frame).context("Failed to parse an Ethernet packet")?;
 
     if ethernet_packet.get_ethertype() != EtherTypes::Ipv4 {
         bail!(
@@ -56,7 +56,7 @@ fn parse_packet(
     // TODO verify checksums
 
     // Parse IEX-TP data
-    let (remaining, iex_tp_segment) = parse_iex_tp_segment(&udp_datagram.payload())
+    let (remaining, iex_tp_segment) = parse_iex_tp_segment(udp_datagram.payload())
         .map_err(|e| anyhow!(format!("{}", e)))
         .context("Failed to parse the IEX-TP segment")?;
 
@@ -107,7 +107,7 @@ fn parse_block(
         PcapBlockOwned::NG(a) => match a {
             // Handle packets
             Block::SimplePacket(ref b) => {
-                assert!(if_linktypes.len() > 0);
+                assert!(!if_linktypes.is_empty());
                 let linktype = if_linktypes[0];
                 let blen = (b.block_len1 - 16) as usize;
 

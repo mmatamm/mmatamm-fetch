@@ -8,7 +8,7 @@ use pcap_parser::{
 pub fn for_each_block<R, F, S>(input: R, handler: F, initial_state: S) -> anyhow::Result<()>
 where
     R: Read,
-    F: Fn(&PcapBlockOwned, &mut S) -> () + Send + Sync + 'static,
+    F: Fn(&PcapBlockOwned, &mut S) + Send + Sync + 'static,
 {
     let mut pcap_reader = PcapNGReader::new(1 << 20, input)?; // TODO Move 65536 to a constant
 

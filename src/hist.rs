@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use chrono::NaiveDate;
 use serde::Deserialize;
 
-pub const URL: &'static str = "https://iextrading.com/api/1.0/hist";
+pub const URL: &str = "https://iextrading.com/api/1.0/hist";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
