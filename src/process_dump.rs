@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail, Context};
 use async_compression::tokio::bufread::GzipDecoder;
 use chrono::TimeDelta;
-use iex_parser::iex_tp::{iex_tp_segment as parse_iex_tp_segment, IexTpSegment};
+use iex_parser::iex_tp::{iex_tp_segment as parse_iex_tp_segment, IexTp1Segment, IexTpSegment};
 use iex_parser::message_protocol_ids;
 use iex_parser::tops::{tops_1_6_message, Tops1_6Message};
 use log::warn;
@@ -9,7 +9,10 @@ use pcap_parser::data::PacketData;
 use pcap_parser::{Block, Linktype, PcapBlockOwned};
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::ip::IpNextHeaderProtocols;
+use pnet::packet::ipv4::Ipv4Packet;
+use pnet::packet::udp::ipv4_checksum;
 use pnet::packet::Packet;
+use thiserror::Error;
 use tokio::io::BufReader;
 use tokio_util::compat::FuturesAsyncReadCompatExt as _;
 use tokio_util::io::SyncIoBridge;
@@ -20,43 +23,65 @@ use crate::parser_pool::for_each_block;
 
 // TODO documents
 
-/// Parse TOPS/IEX TP/UDP/IP/Ethernet packets
-fn parse_packet(
-    packet_data: Option<PacketData>,
-) -> anyhow::Result<Vec<anyhow::Result<Tops1_6Message<String>>>> {
-    let frame = if let Some(PacketData::L2(f)) = packet_data {
-        f
+fn extract_l2_frame(packet_data: Option<PacketData>) -> anyhow::Result<&[u8]> {
+    if let Some(PacketData::L2(f)) = packet_data {
+        Ok(f)
     } else {
-        bail!("Expected L2 data");
-    };
+        Err(anyhow!("Expected L2 data"))
+    }
+}
 
-    // Parse data-link layer data
+fn parse_ethernet_packet(frame: &[u8]) -> anyhow::Result<EthernetPacket> {
     let ethernet_packet =
         EthernetPacket::new(frame).context("Failed to parse an Ethernet packet")?;
 
-    if ethernet_packet.get_ethertype() != EtherTypes::Ipv4 {
-        bail!(
+    if ethernet_packet.get_ethertype() == EtherTypes::Ipv4 {
+        Ok(ethernet_packet)
+    } else {
+        Err(anyhow!(
             "Only IPv4 is supported, got {}",
             ethernet_packet.get_ethertype()
-        );
+        ))
     }
+}
 
-    // Parse network layer data
+fn parse_ip_packet<'a>(ethernet_packet: &'a EthernetPacket<'a>) -> anyhow::Result<Ipv4Packet<'a>> {
     let ip_packet = pnet::packet::ipv4::Ipv4Packet::new(ethernet_packet.payload())
         .context("Failed to parse an IPv4 packet")?;
 
-    if ip_packet.get_next_level_protocol() != IpNextHeaderProtocols::Udp {
-        bail!("Expected UDP, got {}", ip_packet.get_next_level_protocol());
+    if ip_packet.get_next_level_protocol() == IpNextHeaderProtocols::Udp {
+        Ok(ip_packet)
+    } else {
+        Err(anyhow!(
+            "Expected UDP, got {}",
+            ip_packet.get_next_level_protocol()
+        ))
+    }
+}
+
+#[derive(Error, Debug)]
+#[error("The UDP datagram has an unexpected checksum")]
+pub struct InvalidUdpChecksum {}
+
+fn parse_udp_datagram<'a>(packet: &'a Ipv4Packet<'a>) -> anyhow::Result<Vec<u8>> {
+    let udp_datagram = &pnet::packet::udp::UdpPacket::new(packet.payload())
+        .ok_or(anyhow!("Too short UDP datagram"))?;
+
+    if udp_datagram.get_checksum()
+        != ipv4_checksum(
+            udp_datagram,
+            &packet.get_source(),
+            &packet.get_destination(),
+        )
+    {
+        bail!(InvalidUdpChecksum {});
     }
 
-    // Parse transport layer data
-    let udp_datagram = pnet::packet::udp::UdpPacket::new(ip_packet.payload()).unwrap();
-    // println!("{}", simple_hex(&udp_datagram.payload()));
+    Ok(udp_datagram.payload().to_owned())
+}
 
-    // TODO verify checksums
-
-    // Parse IEX-TP data
-    let (remaining, iex_tp_segment) = parse_iex_tp_segment(udp_datagram.payload())
+fn parse_iex_tp_1_segment(payload: &[u8]) -> anyhow::Result<IexTp1Segment> {
+    let (remaining, iex_tp_segment) = parse_iex_tp_segment(payload)
         .map_err(|e| anyhow!(format!("{}", e)))
         .context("Failed to parse the IEX-TP segment")?;
 
@@ -70,10 +95,15 @@ fn parse_packet(
 
     let IexTpSegment::V1(iex_tp_1_segment) = iex_tp_segment;
 
-    // Parse TOPS messages
-    match iex_tp_1_segment.message_protocol_id {
+    Ok(iex_tp_1_segment)
+}
+
+fn parse_tops_messages(
+    segment: IexTp1Segment,
+) -> anyhow::Result<Vec<anyhow::Result<Tops1_6Message<String>>>> {
+    match segment.message_protocol_id {
         message_protocol_ids::TOPS => {
-            Ok(iex_tp_1_segment
+            Ok(segment
                 .messages
                 .into_iter()
                 .map(|message| {
@@ -97,6 +127,28 @@ fn parse_packet(
             id
         )),
     }
+}
+
+/// Parse TOPS/IEX TP/UDP/IP/Ethernet packets
+fn parse_packet(
+    packet_data: Option<PacketData>,
+) -> anyhow::Result<Vec<anyhow::Result<Tops1_6Message<String>>>> {
+    let frame = extract_l2_frame(packet_data)?;
+
+    // Parse data-link layer data
+    let ethernet_packet = parse_ethernet_packet(frame)?;
+
+    // Parse network layer data
+    let ip_packet = parse_ip_packet(&ethernet_packet)?;
+
+    // Parse transport layer data
+    let udp_datagram = parse_udp_datagram(&ip_packet)?;
+
+    // Parse IEX-TP data
+    let iex_tp_1_segment = parse_iex_tp_1_segment(udp_datagram.as_slice())?;
+
+    // Parse TOPS messages
+    parse_tops_messages(iex_tp_1_segment)
 }
 
 fn parse_block(
@@ -146,7 +198,6 @@ fn parse_block(
 // Process an IEX TOPS dump: download it, parse it, analyze it and upload it to the database.
 pub(crate) async fn extract_tops_messages(dump: &DumpMetadata) -> anyhow::Result<()> {
     // Start fetching the dump
-    log::info!("Fetching dump ({}) from {}", dump.date, dump.link);
     let response = isahc::get_async(dump.link.clone()).await?;
 
     // Decompress the stream
@@ -155,20 +206,27 @@ pub(crate) async fn extract_tops_messages(dump: &DumpMetadata) -> anyhow::Result
 
     // Parse and handle each PCAP block
     let sync_decompressed_data = SyncIoBridge::new(decompressed_data);
-    tokio::task::spawn_blocking(move || {
+    let (_, _, total_packets, invalid_packets) = tokio::task::spawn_blocking(move || {
         for_each_block(
             sync_decompressed_data,
             |block: &PcapBlockOwned,
-             (meta_aggregator, if_linktypes): &mut (ohlc::MetaAggregator, Vec<Linktype>)| {
+             (meta_aggregator, if_linktypes, total_packets, invalid_packets): &mut (
+                ohlc::MetaAggregator,
+                Vec<Linktype>,
+                u32,
+                u32,
+            )| {
+                *total_packets += 1;
+
                 match parse_block(block, if_linktypes) {
                     Ok(Some(block)) => {
                         for m in block {
                             if let Ok(Tops1_6Message::QuoteUpdate(u)) = m {
-                                if let Some(cool) = meta_aggregator.report(&u.symbol, u.ask_price, u.timestamp) {
+                                if let Some(cool) =
+                                    meta_aggregator.report(&u.symbol, u.ask_price, u.timestamp)
+                                {
                                     if &u.symbol == "PLTR" {
-                                        println!(
-                                            "{} {:?}", &u.symbol, cool
-                                        );
+                                        println!("{} {:?}", &u.symbol, cool);
                                     }
                                 }
                             }
@@ -176,14 +234,27 @@ pub(crate) async fn extract_tops_messages(dump: &DumpMetadata) -> anyhow::Result
                     }
                     Ok(None) => {}
                     Err(err) => {
-                        log::error!("Error while parsing the PCAP block: {:#}", err);
+                        match err.downcast_ref::<InvalidUdpChecksum>() {
+                            Some(InvalidUdpChecksum { .. }) => *invalid_packets += 1,
+                            None => log::error!("Error while parsing the PCAP block: {:#}", err),
+                        };
                     }
                 }
             },
-            (ohlc::MetaAggregator::new(TimeDelta::minutes(15)), Vec::new()),
+            (
+                ohlc::MetaAggregator::new(TimeDelta::minutes(15)),
+                Vec::new(),
+                0,
+                0,
+            ),
         )
     })
     .await??;
+    log::info!(
+        dump:? = dump;
+        "{}% of packets in this dump had an invalid UDP checksum",
+        (invalid_packets as f32) / (total_packets as f32) * 100.0
+    );
 
     Ok(())
 }

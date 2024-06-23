@@ -1,11 +1,9 @@
 use std::io::Read;
 
 use anyhow::bail;
-use pcap_parser::{
-    traits::PcapReaderIterator, PcapBlockOwned, PcapError, PcapNGReader,
-};
+use pcap_parser::{traits::PcapReaderIterator, PcapBlockOwned, PcapError, PcapNGReader};
 
-pub fn for_each_block<R, F, S>(input: R, handler: F, initial_state: S) -> anyhow::Result<()>
+pub fn for_each_block<R, F, S>(input: R, handler: F, initial_state: S) -> anyhow::Result<S>
 where
     R: Read,
     F: Fn(&PcapBlockOwned, &mut S) + Send + Sync + 'static,
@@ -46,5 +44,5 @@ where
         }
     }
 
-    Ok(())
+    Ok(state)
 }
