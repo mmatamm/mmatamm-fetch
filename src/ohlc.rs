@@ -74,7 +74,6 @@ impl<T: Copy + PartialOrd> Aggregator<T> {
                     .replace(Tick::<T>::new(new_tick_start, value))
             } else {
                 current_tick.include(value);
-                // NOTE
                 None
             }
         } else {

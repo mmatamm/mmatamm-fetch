@@ -2,17 +2,19 @@
 #![feature(map_try_insert)]
 
 mod hist;
+mod ingress;
 mod join_n_at_a_time;
 mod ohlc;
-mod parser_pool;
 mod process_dump;
 
 use std::error::Error;
 
+use anyhow::Context;
 use chrono::NaiveDate;
 use clap::Parser;
 use flexi_logger::Logger;
 use hist::DumpMetadata;
+use ingress::pseudo_ingress;
 use isahc::AsyncReadResponseExt;
 use log::error;
 
@@ -72,7 +74,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     // Fetch the hist.json using IEX's API
     log::debug!("Fetching dumps list from {}", &args.hist);
-    let all_dumps: hist::Hist = isahc::get_async(&args.hist).await?.json().await?;
+    let all_dumps: hist::Hist = isahc::get_async(&args.hist)
+        .await
+        .context("Failed to fetch the dumps list")?
+        .json()
+        .await
+        .context("Failed to parse the dumps list")?;
 
     // Filter the dumps we're not interested in
     // TODO use iter::filter_map, maybe, think about async
@@ -82,13 +89,23 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .flatten()
         .filter(|dump| filter_dump(&args, dump));
 
+    let (ticks_sender, ticks_receiver) = kanal::bounded(1000);
+
+    tokio::task::spawn_blocking(move || pseudo_ingress(ticks_receiver));
+
+    let dump = relevant_dumps.last().unwrap();
+    if let Err(err) = process_dump::read_dump(dump, ticks_sender.clone()).await {
+        error!(dump:?; "{:#}", err);
+    }
+
     // TODO Consider limiting the amount of handled requests per moment
-    join_n_at_a_time::join_n_at_a_time(relevant_dumps.map(async |dump| {
-        if let Err(err) = process_dump::extract_tops_messages(dump).await {
-            error!(dump:?; "{:#}", err);
-        }
-    }))
-    .await;
+    // BUG This causes the compiler to ICE. It should be fixed by this PR: https://github.com/rust-lang/rust/pull/127136
+    // join_n_at_a_time::join_n_at_a_time(relevant_dumps.map(async |dump| {
+    //     if let Err(err) = process_dump::read_dump(dump, ticks_sender.clone()).await {
+    //         error!(dump:?; "{:#}", err);
+    //     }
+    // }))
+    // .await;
 
     Ok(())
 }
