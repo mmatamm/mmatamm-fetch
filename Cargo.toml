@@ -20,6 +20,7 @@ num-traits = "0.2.19"
 pcap-parser = { git = "https://github.com/rusticata/pcap-parser.git", version = "0.16.0", features = ["data"] }
 pin-project = "1.1.5"
 pnet = "0.35.0"
+questdb-rs = { version = "4.0.2", features = ["chrono_timestamp"] }
 serde = { version = "1.0.202", features = ["derive"] }
 serde_json = "1.0.117"
 thiserror = "1.0.61"

@@ -14,7 +14,7 @@ use chrono::NaiveDate;
 use clap::Parser;
 use flexi_logger::Logger;
 use hist::DumpMetadata;
-use ingress::pseudo_ingress;
+use ingress::ingress_regularly;
 use isahc::AsyncReadResponseExt;
 use log::error;
 
@@ -91,7 +91,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let (ticks_sender, ticks_receiver) = kanal::bounded(1000);
 
-    tokio::task::spawn_blocking(move || pseudo_ingress(ticks_receiver));
+    let sender = questdb::ingress::Sender::from_conf("http::addr=localhost:9000;")?;
+    tokio::task::spawn_blocking(move || ingress_regularly(sender, ticks_receiver, 10000));
 
     let dump = relevant_dumps.last().unwrap();
     if let Err(err) = process_dump::read_dump(dump, ticks_sender.clone()).await {
