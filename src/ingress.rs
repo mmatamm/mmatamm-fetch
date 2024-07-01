@@ -1,5 +1,4 @@
 use anyhow::Context;
-use iex_parser::tops::Tops1_6Message;
 use log::info;
 use questdb::ingress::{Buffer, TimestampMicros};
 

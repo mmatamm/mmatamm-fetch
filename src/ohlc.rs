@@ -118,3 +118,135 @@ impl<T: Copy + std::fmt::Debug + PartialOrd + Zero> MetaAggregator<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::assert_matches::assert_matches;
+
+    use chrono::{Duration, TimeZone as _, Utc};
+
+    use crate::ohlc::{Aggregator, Tick};
+
+    #[test]
+    fn test_tick_include() {
+        let mut tick = Tick::new(Utc::now(), 10.0);
+
+        tick.include(15.0);
+        assert_matches!(
+            tick,
+            Tick {
+                open: 10.0,
+                high: 15.0,
+                low: 10.0,
+                close: 15.0,
+                timestamp: _,
+            }
+        );
+
+        tick.include(5.0);
+        assert_matches!(
+            tick,
+            Tick {
+                open: 10.0,
+                high: 15.0,
+                low: 5.0,
+                close: 5.0,
+                timestamp: _,
+            }
+        );
+
+        tick.include(12.0);
+        assert_matches!(
+            tick,
+            Tick {
+                open: 10.0,
+                high: 15.0,
+                low: 5.0,
+                close: 12.0,
+                timestamp: _,
+            }
+        );
+    }
+
+    #[test]
+    fn test_aggregator_report_first_tick() {
+        let mut aggregator = Aggregator::new(Duration::seconds(60));
+        let timestamp = Utc.with_ymd_and_hms(2024, 7, 1, 0, 0, 0).unwrap();
+        let result = aggregator.report(10.0, timestamp);
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_aggregator_report_within_period() {
+        let mut aggregator = Aggregator::new(Duration::seconds(60));
+        let start = Utc.with_ymd_and_hms(2024, 7, 1, 0, 0, 0).unwrap();
+
+        aggregator.report(10.0, start);
+        let result = aggregator.report(15.0, start + Duration::seconds(30));
+
+        assert!(result.is_none());
+        assert_matches!(
+            aggregator.current_tick,
+            Some(Tick {
+                open: 10.0,
+                high: 15.0,
+                low: 10.0,
+                close: 15.0,
+                timestamp,
+            }) if timestamp == start
+        );
+    }
+
+    #[test]
+    fn test_aggregator_report_new_period() {
+        let mut aggregator = Aggregator::new(Duration::seconds(60));
+        let start = Utc.with_ymd_and_hms(2024, 7, 1, 0, 0, 0).unwrap();
+
+        aggregator.report(10.0, start);
+        let result = aggregator.report(20.0, start + Duration::seconds(70));
+
+        assert_matches!(
+            result,
+            Some(Tick {
+                open: 10.0,
+                high: 10.0,
+                low: 10.0,
+                close: 10.0,
+                timestamp,
+            }) if timestamp == start
+        );
+    }
+
+    #[test]
+    fn test_aggregator_report_multiple_periods() {
+        let mut aggregator = Aggregator::new(Duration::seconds(60));
+        let start = Utc.with_ymd_and_hms(2024, 7, 1, 0, 0, 0).unwrap();
+
+        aggregator.report(10.0, start);
+        let result = aggregator.report(20.0, start + Duration::seconds(150));
+
+        assert_matches!(
+            result,
+            Some(Tick {
+                open: 10.0,
+                high: 10.0,
+                low: 10.0,
+                close: 10.0,
+                timestamp,
+            }) if timestamp == start
+        );
+    }
+
+    #[test]
+    fn test_aggregator_report_out_of_order() {
+        let mut aggregator = Aggregator::new(Duration::seconds(60));
+        let start = Utc.with_ymd_and_hms(2024, 7, 1, 0, 0, 0).unwrap();
+
+        aggregator.report(10.0, start);
+        aggregator.report(15.0, start - Duration::seconds(30));
+
+        assert_eq!(aggregator.last_timestamp, Some(start));
+        // Note: We can't easily test the warning log here without additional setup
+    }
+}
