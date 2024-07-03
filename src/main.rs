@@ -20,7 +20,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use indicatif_log_bridge::LogWrapper;
 use ingress::{ingress_regularly, pseudo_ingress};
 use isahc::AsyncReadResponseExt;
-use log::{error, info};
+use log::{error, info, warn};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
