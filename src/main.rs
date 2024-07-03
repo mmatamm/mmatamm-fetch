@@ -18,7 +18,7 @@ use flexi_logger::Logger;
 use hist::DumpMetadata;
 use ingress::{ingress_regularly, pseudo_ingress};
 use isahc::AsyncReadResponseExt;
-use log::error;
+use log::{error, info};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -98,7 +98,16 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let (ticks_sender, ticks_receiver) = kanal::bounded(1000);
 
-    let sender = questdb::ingress::Sender::from_conf("http::addr=localhost:9000;")?;
+    let sender = {
+        let result = questdb::ingress::Sender::from_env();
+
+        if result.is_err() {
+            info!("You might need to set an environment variable 'QDB_CLIENT_CONF' with the QuestDB server address. For example, `export QDB_CLIENT_CONF=\"http::addr=localhost:9000;\"`.")
+        }
+
+        result
+    }?;
+
     // tokio::task::spawn_blocking(move || ingress_regularly(sender, ticks_receiver, 10000));
     tokio::task::spawn_blocking(move || pseudo_ingress(ticks_receiver));
 
