@@ -8,19 +8,19 @@ mod ingress;
 mod ohlc;
 mod process_dump;
 
-use std::{error::Error, time::Duration};
+use std::{error::Error, path::PathBuf, time::Duration};
 
 use anyhow::Context;
 use chrono::NaiveDate;
 use clap::Parser;
 use concurrent_for_each::concurrent_for_each;
-use flexi_logger::{colored_detailed_format, json_format, Logger};
+use flexi_logger::{colored_detailed_format, json_format, FileSpec, Logger};
 use hist::DumpMetadata;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use indicatif_log_bridge::LogWrapper;
 use ingress::{ingress_regularly, pseudo_ingress};
 use isahc::AsyncReadResponseExt;
-use log::{error, info, logger};
+use log::{error, info};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -40,6 +40,10 @@ struct Args {
     /// The amount of workers for fetching and parsing
     #[arg(long, default_value_t = 4)]
     workers: u8,
+
+    /// The directory to store the logs in. The default is the current working directory.
+    #[arg(long)]
+    logs: Option<PathBuf>,
 }
 
 /// Checks if a dump file should be processed based on the provided arguments.
@@ -50,14 +54,14 @@ struct Args {
 ///
 /// # Returns
 /// Whether or not the given dump file should be processed based on the provided arguments.
-fn filter_dump(args: &Args, dump: &DumpMetadata) -> bool {
-    let from_limit = if let Some(from) = args.from {
+fn filter_dump(dump: &DumpMetadata, from: Option<NaiveDate>, until: Option<NaiveDate>) -> bool {
+    let from_limit = if let Some(from) = from {
         dump.date >= from
     } else {
         true
     };
 
-    let until_limit = if let Some(until) = args.until {
+    let until_limit = if let Some(until) = until {
         dump.date <= until
     } else {
         true
@@ -74,13 +78,19 @@ fn filter_dump(args: &Args, dump: &DumpMetadata) -> bool {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    // Start the logger and ensure it doesn't interfere with progress bars
-    let (boxed_logger, _logger_handle) = Logger::try_with_env_or_str("info")?.build()?;
-    let progress_bars = MultiProgress::new();
-    LogWrapper::new(progress_bars.clone(), boxed_logger).try_init()?;
-
     // Parse CLI argumetns
     let args = Args::parse();
+
+    // Start the logger and ensure it doesn't interfere with progress bars
+    let (boxed_logger, _logger_handle) = Logger::try_with_env_or_str("info")?
+        .format_for_stderr(colored_detailed_format)
+        .format_for_files(json_format)
+        .log_to_file(FileSpec::default().o_directory(args.logs))
+        .print_message()
+        .duplicate_to_stderr(flexi_logger::Duplicate::Warn)
+        .build()?;
+    let progress_bars = MultiProgress::new();
+    LogWrapper::new(progress_bars.clone(), boxed_logger).try_init()?;
 
     // Fetch the hist.json using IEX's API
     log::debug!("Fetching dumps list from {}", &args.hist);
@@ -97,7 +107,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .0
         .values()
         .flatten()
-        .filter(|dump| filter_dump(&args, dump))
+        .filter(|dump| filter_dump(dump, args.from, args.until))
         .collect();
 
     let (ticks_sender, ticks_receiver) = kanal::bounded(1000);
@@ -106,7 +116,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let result = questdb::ingress::Sender::from_env();
 
         if result.is_err() {
-            info!("You might need to set an environment variable 'QDB_CLIENT_CONF' with the QuestDB server address. For example, `export QDB_CLIENT_CONF=\"http::addr=localhost:9000;\"`.")
+            warn!("You might need to set an environment variable 'QDB_CLIENT_CONF' with the QuestDB server address. For example, `export QDB_CLIENT_CONF=\"http::addr=localhost:9000;\"`.")
         }
 
         result

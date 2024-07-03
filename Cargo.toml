@@ -8,11 +8,12 @@ anyhow = "1.0.86"
 async-compression = { version = "0.4.10", features = ["tokio", "gzip"] }
 chrono = { version = "0.4.38", features = ["serde"] }
 clap = { version = "4.5.4", features = ["derive"] }
-flexi_logger = { version = "0.28.0", features = ["async"] }
+flexi_logger = { version = "0.28.5", features = ["json", "kv"] }
 futures = "0.3.30"
 futures-util = { version = "0.3.30", features = ["tokio-io", "io"] }
 iex-parser = { git = "https://github.com/AmitDIRTYC0W/iex-parser-rs.git", version = "0.1.0" }
 indicatif = "0.17.8"
+indicatif-log-bridge = "0.2.2"
 isahc = { version = "1.7.2", features = ["json"] }
 kanal = "0.1.0-pre8"
 log = { version = "0.4.21", features = ["kv", "kv_std", "kv_serde"] }
