@@ -107,7 +107,7 @@ impl<T: Copy + std::fmt::Debug + PartialOrd + Zero> MetaAggregator<T> {
             let new_aggregator = Aggregator::new(self.period);
             self.aggregators
                 .try_insert(symbol.to_string(), new_aggregator)
-                .expect("cannot insert an aggregator even though it doesn't exist")
+                .expect("cannot insert a new aggregator even though it doesn't exist")
         };
 
         // Report to the appopriate aggregator

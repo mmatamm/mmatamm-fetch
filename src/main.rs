@@ -2,9 +2,9 @@
 #![feature(map_try_insert)]
 #![feature(assert_matches)]
 
+mod concurrent_for_each;
 mod hist;
 mod ingress;
-mod join_n_at_a_time;
 mod ohlc;
 mod process_dump;
 
@@ -13,9 +13,10 @@ use std::error::Error;
 use anyhow::Context;
 use chrono::NaiveDate;
 use clap::Parser;
+use concurrent_for_each::concurrent_for_each;
 use flexi_logger::Logger;
 use hist::DumpMetadata;
-use ingress::ingress_regularly;
+use ingress::{ingress_regularly, pseudo_ingress};
 use isahc::AsyncReadResponseExt;
 use log::error;
 
@@ -33,6 +34,10 @@ struct Args {
     /// The URL of the IEX API 'hist' file
     #[arg(long, default_value = hist::URL)]
     hist: String,
+
+    /// The amount of workers for fetching and parsing
+    #[arg(long, default_value_t = 4)]
+    workers: u8,
 }
 
 /// Checks if a dump file should be processed based on the provided arguments.
@@ -84,30 +89,33 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     // Filter the dumps we're not interested in
     // TODO use iter::filter_map, maybe, think about async
-    let relevant_dumps = all_dumps
+    let relevant_dumps: Vec<_> = all_dumps
         .0
         .values()
         .flatten()
-        .filter(|dump| filter_dump(&args, dump));
+        .filter(|dump| filter_dump(&args, dump))
+        .collect();
 
     let (ticks_sender, ticks_receiver) = kanal::bounded(1000);
 
     let sender = questdb::ingress::Sender::from_conf("http::addr=localhost:9000;")?;
-    tokio::task::spawn_blocking(move || ingress_regularly(sender, ticks_receiver, 10000));
+    // tokio::task::spawn_blocking(move || ingress_regularly(sender, ticks_receiver, 10000));
+    tokio::task::spawn_blocking(move || pseudo_ingress(ticks_receiver));
 
-    let dump = relevant_dumps.last().unwrap();
-    if let Err(err) = process_dump::read_dump(dump, ticks_sender.clone()).await {
-        error!(dump:?; "{:#}", err);
-    }
-
-    // TODO Consider limiting the amount of handled requests per moment
-    // BUG This causes the compiler to ICE. It should be fixed by this PR: https://github.com/rust-lang/rust/pull/127136
-    // join_n_at_a_time::join_n_at_a_time(relevant_dumps.map(async |dump| {
-    //     if let Err(err) = process_dump::read_dump(dump, ticks_sender.clone()).await {
-    //         error!(dump:?; "{:#}", err);
-    //     }
-    // }))
-    // .await;
+    // BUG This caused the compiler to ICE. It is fixed in version 1.8.1.
+    concurrent_for_each(
+        |dump| {
+            let value = ticks_sender.clone();
+            async move {
+                if let Err(err) = process_dump::read_dump(dump, value).await {
+                    error!(dump:?; "{:#}", err);
+                }
+            }
+        },
+        relevant_dumps,
+        args.workers,
+    )
+    .await?;
 
     Ok(())
 }
