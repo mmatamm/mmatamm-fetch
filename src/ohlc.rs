@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    intrinsics::{likely, unlikely},
+};
 
 use chrono::{DateTime, DurationRound, TimeDelta, Utc};
 use log::warn;
@@ -98,10 +101,10 @@ impl<T: Copy + std::fmt::Debug + PartialOrd + Zero> MetaAggregator<T> {
 
     pub fn report(&mut self, symbol: &str, price: T, timestamp: DateTime<Utc>) -> Option<Tick<T>> {
         // Get the aggregator or create one if it doesn't exists
-        let aggregator = if self.aggregators.contains_key(symbol) {
+        let aggregator = if likely(self.aggregators.contains_key(symbol)) {
             self.aggregators.get_mut(symbol).unwrap()
         } else {
-            if !price.is_zero() {
+            if unlikely(!price.is_zero()) {
                 warn!(symbol; "A quote update about an unknown symbol was reported");
             }
 
@@ -112,7 +115,7 @@ impl<T: Copy + std::fmt::Debug + PartialOrd + Zero> MetaAggregator<T> {
         };
 
         // Report to the appopriate aggregator
-        if price.is_zero() {
+        if unlikely(price.is_zero()) {
             None
         } else {
             aggregator.report(price, timestamp)

@@ -1,6 +1,7 @@
 #![feature(async_closure)]
 #![feature(map_try_insert)]
 #![feature(assert_matches)]
+#![feature(core_intrinsics)]
 
 mod concurrent_for_each;
 mod hist;
