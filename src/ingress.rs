@@ -25,8 +25,6 @@ pub fn ingress_regularly(
             .column_f64("close", tick.close)?
             .at(TimestampMicros::from_datetime(tick.timestamp))?;
 
-        println!("{} {:?}", &symbol, &tick);
-
         if buffer.len() > flush_threshold {
             info!("Flushing to the database");
             sender

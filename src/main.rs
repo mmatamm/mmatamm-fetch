@@ -20,9 +20,9 @@ use flexi_logger::{colored_detailed_format, json_format, FileSpec, LogSpecificat
 use hist::DumpMetadata;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use indicatif_log_bridge::LogWrapper;
-use ingress::{ingress_regularly, pseudo_ingress};
+use ingress::ingress_regularly;
 use isahc::AsyncReadResponseExt;
-use log::{error, info, warn};
+use log::{error, warn};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -136,8 +136,8 @@ async fn main() -> anyhow::Result<()> {
         result
     }?;
 
-    // tokio::task::spawn_blocking(move || ingress_regularly(sender, ticks_receiver, 10000));
-    tokio::task::spawn_blocking(move || pseudo_ingress(ticks_receiver));
+    tokio::task::spawn_blocking(move || ingress_regularly(sender, ticks_receiver, 10000));
+    // tokio::task::spawn_blocking(move || pseudo_ingress(ticks_receiver));
 
     // Create a sexy progress bar
     let total_progress = progress_bars.add(
