@@ -16,7 +16,7 @@ use anyhow::{bail, Context};
 use chrono::{NaiveDate, TimeDelta};
 use clap::Parser;
 use concurrent_for_each::concurrent_for_each;
-use flexi_logger::{colored_detailed_format, json_format, FileSpec, Logger};
+use flexi_logger::{colored_detailed_format, json_format, FileSpec, LogSpecification, Logger};
 use hist::DumpMetadata;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use indicatif_log_bridge::LogWrapper;
@@ -96,10 +96,10 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Start the logger and ensure it doesn't interfere with progress bars
-    let (boxed_logger, _logger_handle) = Logger::try_with_env_or_str("info")?
-        .format_for_stderr(colored_detailed_format)
+    let (boxed_logger, _logger_handle) = Logger::with(LogSpecification::info())
         .format_for_files(json_format)
         .log_to_file(FileSpec::default().o_directory(args.logs))
+        .format_for_stderr(colored_detailed_format)
         .print_message()
         .duplicate_to_stderr(flexi_logger::Duplicate::Warn)
         .build()?;
