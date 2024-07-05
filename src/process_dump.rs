@@ -1,6 +1,5 @@
 use anyhow::{anyhow, bail, Context};
 use async_compression::tokio::bufread::GzipDecoder;
-use chrono::TimeDelta;
 use iex_parser::iex_tp::{iex_tp_segment as parse_iex_tp_segment, IexTp1Segment, IexTpSegment};
 use iex_parser::message_protocol_ids;
 use iex_parser::tops::{tops_1_6_message, Tops1_6Message};
@@ -13,7 +12,7 @@ use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::udp::ipv4_checksum;
 use pnet::packet::Packet;
-use std::intrinsics::unlikely;
+use std::intrinsics::{likely, unlikely};
 use std::io::Read;
 use thiserror::Error;
 use tokio::io::BufReader;
@@ -37,7 +36,7 @@ fn parse_ethernet_packet(frame: &[u8]) -> anyhow::Result<EthernetPacket> {
     let ethernet_packet =
         EthernetPacket::new(frame).context("Failed to parse an Ethernet packet")?;
 
-    if ethernet_packet.get_ethertype() == EtherTypes::Ipv4 {
+    if likely(ethernet_packet.get_ethertype() == EtherTypes::Ipv4) {
         Ok(ethernet_packet)
     } else {
         Err(anyhow!(
@@ -51,7 +50,7 @@ fn parse_ip_packet<'a>(ethernet_packet: &'a EthernetPacket<'a>) -> anyhow::Resul
     let ip_packet = pnet::packet::ipv4::Ipv4Packet::new(ethernet_packet.payload())
         .context("Failed to parse an IPv4 packet")?;
 
-    if ip_packet.get_next_level_protocol() == IpNextHeaderProtocols::Udp {
+    if likely(ip_packet.get_next_level_protocol() == IpNextHeaderProtocols::Udp) {
         Ok(ip_packet)
     } else {
         Err(anyhow!(
@@ -88,7 +87,7 @@ fn parse_iex_tp_1_segment(payload: &[u8]) -> anyhow::Result<IexTp1Segment> {
         .context("Failed to parse the IEX-TP segment")?;
 
     // Check there is no remaining data, which means the parser is probably outdated
-    if !remaining.is_empty() {
+    if unlikely(!remaining.is_empty()) {
         warn!(
             "There is remaining data after the IEX-TP segment: {:?}",
             &remaining
