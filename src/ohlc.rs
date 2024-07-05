@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::{DateTime, DurationRound, TimeDelta, Utc};
 use log::warn;
 use num_traits::Zero;
 
@@ -66,18 +66,19 @@ impl<T: Copy + PartialOrd> Aggregator<T> {
         if let Some(ref mut current_tick) = &mut self.current_tick {
             if timestamp > current_tick.timestamp + self.period {
                 // Create a new tick
-                let time_since = timestamp - current_tick.timestamp;
-                let ticks_since =
-                    time_since.num_nanoseconds().unwrap() / self.period.num_nanoseconds().unwrap();
-                let new_tick_start = current_tick.timestamp + self.period * (ticks_since as i32);
-                self.current_tick
-                    .replace(Tick::<T>::new(new_tick_start, value))
+                self.current_tick.replace(Tick::<T>::new(
+                    timestamp.duration_trunc(self.period).unwrap(),
+                    value,
+                ))
             } else {
                 current_tick.include(value);
                 None
             }
         } else {
-            self.current_tick.replace(Tick::<T>::new(timestamp, value))
+            self.current_tick.replace(Tick::<T>::new(
+                timestamp.duration_trunc(self.period).unwrap(),
+                value,
+            ))
         }
     }
 }
