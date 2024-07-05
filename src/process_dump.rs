@@ -13,6 +13,7 @@ use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::udp::ipv4_checksum;
 use pnet::packet::Packet;
+use std::intrinsics::unlikely;
 use std::io::Read;
 use thiserror::Error;
 use tokio::io::BufReader;
@@ -293,6 +294,7 @@ where
 pub(crate) fn extract_ticks<R: Read>(
     input: R,
     ticks: kanal::Sender<(String, Tick)>,
+    tick_period: chrono::TimeDelta,
 ) -> anyhow::Result<()> {
     for_each_tops_message(
         input,
@@ -305,13 +307,14 @@ pub(crate) fn extract_ticks<R: Read>(
                 }
             }
         },
-        ohlc::MetaAggregator::new(TimeDelta::minutes(1)),
+        ohlc::MetaAggregator::new(tick_period),
     )
 }
 
 pub(crate) async fn read_dump(
     dump: &DumpMetadata,
     ticks: kanal::Sender<(String, Tick)>,
+    tick_period: chrono::TimeDelta,
 ) -> anyhow::Result<()> {
     // Start fetching the dump
     let response = isahc::get_async(dump.link.clone())
@@ -324,7 +327,8 @@ pub(crate) async fn read_dump(
 
     // Parse and handle each PCAP block
     let sync_decompressed_data = SyncIoBridge::new(decompressed_data);
-    tokio::task::spawn_blocking(move || extract_ticks(sync_decompressed_data, ticks)).await??;
+    tokio::task::spawn_blocking(move || extract_ticks(sync_decompressed_data, ticks, tick_period))
+        .await??;
 
     Ok(())
 }

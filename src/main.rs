@@ -2,6 +2,7 @@
 #![feature(map_try_insert)]
 #![feature(assert_matches)]
 #![feature(core_intrinsics)]
+#![feature(duration_constructors)]
 
 mod concurrent_for_each;
 mod hist;
@@ -9,10 +10,10 @@ mod ingress;
 mod ohlc;
 mod process_dump;
 
-use std::{error::Error, path::PathBuf, time::Duration};
+use std::{intrinsics::unlikely, path::PathBuf, time::Duration};
 
-use anyhow::Context;
-use chrono::NaiveDate;
+use anyhow::{bail, Context};
+use chrono::{NaiveDate, TimeDelta};
 use clap::Parser;
 use concurrent_for_each::concurrent_for_each;
 use flexi_logger::{colored_detailed_format, json_format, FileSpec, Logger};
@@ -34,6 +35,10 @@ struct Args {
     #[arg(long)]
     until: Option<NaiveDate>,
 
+    ///  The length of each OHLC tick
+    #[arg(short, long, default_value = "1 min")]
+    tick_period: humantime::Duration,
+
     /// The URL of the IEX API 'hist' file
     #[arg(long, default_value = hist::URL)]
     hist: String,
@@ -45,6 +50,10 @@ struct Args {
     /// The directory to store the logs in. The default is the current working directory.
     #[arg(long)]
     logs: Option<PathBuf>,
+
+    /// After aggregating this amount of bytes, flush them to the database
+    #[arg(long, default_value_t = 10_000)]
+    flush_threshold: usize,
 }
 
 /// Checks if a dump file should be processed based on the provided arguments.
@@ -78,9 +87,13 @@ fn filter_dump(dump: &DumpMetadata, from: Option<NaiveDate>, until: Option<Naive
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn main() -> anyhow::Result<()> {
     // Parse CLI argumetns
     let args = Args::parse();
+
+    if unlikely(Duration::from_days(1) < args.tick_period.into()) {
+        bail!("A tick cannot be longer than a day");
+    }
 
     // Start the logger and ensure it doesn't interfere with progress bars
     let (boxed_logger, _logger_handle) = Logger::try_with_env_or_str("info")?
@@ -145,7 +158,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             let local_progress_bar = total_progress.clone();
 
             async move {
-                if let Err(err) = process_dump::read_dump(dump, local_ticks_sender).await {
+                if let Err(err) = process_dump::read_dump(
+                    dump,
+                    local_ticks_sender,
+                    TimeDelta::from_std(args.tick_period.into()).unwrap(),
+                )
+                .await
+                {
                     error!(dump:?; "{:#}", err);
                 }
 
