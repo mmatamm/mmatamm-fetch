@@ -1,6 +1,6 @@
 [package]
 name = "mmatamm-fetch"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 edition = "2021"
 
 [dependencies]
@@ -12,7 +12,7 @@ flexi_logger = { version = "0.28.5", features = ["json", "kv"] }
 futures = "0.3.30"
 futures-util = { version = "0.3.30", features = ["tokio-io", "io"] }
 humantime = "2.1.0"
-iex-parser = { git = "https://github.com/AmitDIRTYC0W/iex-parser-rs.git", version = "0.1.0" }
+iex-parser = { git = "https://github.com/AmitDIRTYC0W/iex-parser-rs.git", version = "0.2.0" }
 indicatif = "0.17.8"
 indicatif-log-bridge = "0.2.2"
 isahc = { version = "1.7.2", features = ["json"] }

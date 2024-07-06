@@ -298,10 +298,10 @@ pub(crate) fn extract_ticks<R: Read>(
     for_each_tops_message(
         input,
         move |message, meta_aggregator| {
-            if let Tops1_6Message::QuoteUpdate(u) = message {
-                if let Some(tick) = meta_aggregator.report(&u.symbol, u.ask_price, u.timestamp) {
+            if let Tops1_6Message::TradeReport(r) = message {
+                if let Some(tick) = meta_aggregator.report(&r.symbol, r.price, r.timestamp) {
                     ticks
-                        .send((u.symbol.clone(), tick))
+                        .send((r.symbol.clone(), tick))
                         .expect("cannot send a tick through the channel");
                 }
             }

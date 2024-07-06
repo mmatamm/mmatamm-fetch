@@ -650,8 +650,8 @@ dependencies = [
 
 [[package]]
 name = "iex-parser"
-version = "0.1.0"
-source = "git+https://github.com/AmitDIRTYC0W/iex-parser-rs.git#4a679b2db579e78b821c4840a56e46383935fb5d"
+version = "0.2.0"
+source = "git+https://github.com/AmitDIRTYC0W/iex-parser-rs.git#51f63a689e9a24a231cfee2218a6eef712dc6d04"
 dependencies = [
  "chrono",
  "float_eq",
@@ -868,7 +868,7 @@ dependencies = [
 
 [[package]]
 name = "mmatamm-fetch"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "anyhow",
  "async-compression",

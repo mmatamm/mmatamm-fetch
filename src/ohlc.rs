@@ -104,10 +104,6 @@ impl<T: Copy + std::fmt::Debug + PartialOrd + Zero> MetaAggregator<T> {
         let aggregator = if likely(self.aggregators.contains_key(symbol)) {
             self.aggregators.get_mut(symbol).unwrap()
         } else {
-            if unlikely(!price.is_zero()) {
-                warn!(symbol; "A quote update about an unknown symbol was reported");
-            }
-
             let new_aggregator = Aggregator::new(self.period);
             self.aggregators
                 .try_insert(symbol.to_string(), new_aggregator)
@@ -115,11 +111,7 @@ impl<T: Copy + std::fmt::Debug + PartialOrd + Zero> MetaAggregator<T> {
         };
 
         // Report to the appopriate aggregator
-        if unlikely(price.is_zero()) {
-            None
-        } else {
-            aggregator.report(price, timestamp)
-        }
+        aggregator.report(price, timestamp)
     }
 }
 
