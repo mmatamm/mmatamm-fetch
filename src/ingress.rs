@@ -1,5 +1,5 @@
 use anyhow::Context;
-use log::info;
+use log::{debug, info};
 use questdb::ingress::{Buffer, TimestampMicros};
 
 use crate::ohlc::Tick;
@@ -26,7 +26,7 @@ pub fn ingress_regularly(
             .at(TimestampMicros::from_datetime(tick.timestamp))?;
 
         if buffer.len() > flush_threshold {
-            info!("Flushing to the database");
+            debug!("Flushing to the database");
             sender
                 .flush(&mut buffer)
                 .context("Failed to flush the buffer to the database")?;
