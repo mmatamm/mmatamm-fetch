@@ -37,10 +37,17 @@ pub fn ingress_regularly(
 }
 
 pub(crate) fn pseudo_ingress(ticks: kanal::Receiver<(String, Tick)>) -> anyhow::Result<()> {
+    let mut total = 0;
+
     for (symbol, tick) in ticks {
-        if &symbol == "PLTR" {
-            println!("{} {:?}", &symbol, &tick);
+        total += 1;
+
+        if total % 100_000 == 0 {
+            info!("Processed {} ticks", total);
         }
+        // if &symbol == "PLTR" {
+        //     println!("{} {:?}", &symbol, &tick);
+        // }
     }
 
     Ok(())
