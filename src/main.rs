@@ -145,7 +145,7 @@ async fn main() -> anyhow::Result<()> {
             .with_prefix("Processing IEX dumps")
             .with_style(
                 ProgressStyle::default_bar()
-                    .template("{prefix}: {wide_bar} {human_pos}/{human_len}, ETA: {eta}")
+                    .template("{prefix}: {wide_bar} {human_pos}/{human_len}, Elapsed: {elapsed}")
                     .unwrap(),
             ),
     );
