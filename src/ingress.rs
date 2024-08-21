@@ -4,6 +4,13 @@ use questdb::ingress::{Buffer, TimestampMicros};
 
 use crate::ohlc::Tick;
 
+fn flush_buffer(sender: &mut questdb::ingress::Sender, buffer: &mut Buffer) -> anyhow::Result<()> {
+    debug!("Flushing to the database");
+    sender
+        .flush(buffer)
+        .context("Failed to flush the buffer to the database")
+}
+
 pub fn ingress_regularly(
     mut sender: questdb::ingress::Sender,
     ticks: kanal::Receiver<(String, Tick)>,
@@ -11,7 +18,7 @@ pub fn ingress_regularly(
 ) -> anyhow::Result<()> {
     let mut buffer = Buffer::new();
 
-    // NOTE By reserving space for the buffer, we prevent re-allocation in
+    // By reserving space for the buffer, we prevent re-allocation in
     // the first round _almost_ completely
     buffer.reserve(flush_threshold);
 
@@ -26,12 +33,11 @@ pub fn ingress_regularly(
             .at(TimestampMicros::from_datetime(tick.timestamp))?;
 
         if buffer.len() > flush_threshold {
-            debug!("Flushing to the database");
-            sender
-                .flush(&mut buffer)
-                .context("Failed to flush the buffer to the database")?;
+            flush_buffer(&mut sender, &mut buffer)?;
         }
     }
+
+    flush_buffer(&mut sender, &mut buffer)?;
 
     Ok(())
 }
