@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.0-alpha.2] - 2024-08-22
+
+### 🚀 Features
+
+- Upload system events too
+
+### 🐛 Bug Fixes
+
+- Report about trade prices instead of ask prices
+- Flush the buffer to the database at the end
+
+### 🎨 Styling
+
+- Change ETA to Elapsed time in the progress bar
+- Avoid logging about database flushes normally
+- Log total amount of ticks in `pseudo_ingress`
+
 ## [0.1.0-alpha] - 2024-07-05
 
 ### 🚀 Features
@@ -41,6 +58,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Initial commit
+- Generate a change-log for version 0.1.0-alpha
 
 ### ◀️ Revert
 
