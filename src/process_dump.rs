@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Context};
 use async_compression::tokio::bufread::GzipDecoder;
 use iex_parser::iex_tp::{iex_tp_segment as parse_iex_tp_segment, IexTp1Segment, IexTpSegment};
 use iex_parser::message_protocol_ids;
-use iex_parser::tops::{tops_1_6_message, Tops1_6Message};
+use iex_parser::tops::{tops_1_6_message, SystemEvent, Tops1_6Message};
 use log::{error, warn};
 use pcap_parser::data::PacketData;
 use pcap_parser::{traits::PcapReaderIterator, PcapBlockOwned, PcapError, PcapNGReader};
@@ -19,6 +19,7 @@ use tokio::io::BufReader;
 use tokio_util::compat::FuturesAsyncReadCompatExt as _;
 use tokio_util::io::SyncIoBridge;
 
+use crate::data_targets::DataTargets;
 use crate::hist::DumpMetadata;
 use crate::ohlc::{self, Tick};
 
@@ -290,19 +291,31 @@ where
     Ok(())
 }
 
-pub(crate) fn extract_ticks<R: Read>(
+pub(crate) fn extract_ticks_and_events<R: Read>(
     input: R,
     ticks: kanal::Sender<(String, Tick)>,
+    system_events: kanal::Sender<SystemEvent>,
     tick_period: chrono::TimeDelta,
+    targets: DataTargets,
 ) -> anyhow::Result<()> {
     for_each_tops_message(
         input,
         move |message, meta_aggregator| {
-            if let Tops1_6Message::TradeReport(r) = message {
-                if let Some(tick) = meta_aggregator.report(&r.symbol, r.price, r.timestamp) {
-                    ticks
-                        .send((r.symbol.clone(), tick))
-                        .expect("cannot send a tick through the channel");
+            if targets.trade_prices {
+                if let Tops1_6Message::TradeReport(r) = message {
+                    if let Some(tick) = meta_aggregator.report(&r.symbol, r.price, r.timestamp) {
+                        ticks
+                            .send((r.symbol.clone(), tick))
+                            .expect("cannot send a tick through the channel");
+                    }
+                }
+            }
+
+            if targets.system_events {
+                if let Tops1_6Message::SystemEvent(ref e) = message {
+                    system_events
+                        .send(e.clone())
+                        .expect("cannot send a system events through the channel");
                 }
             }
         },
@@ -310,10 +323,26 @@ pub(crate) fn extract_ticks<R: Read>(
     )
 }
 
+/// Download, parse and process an IEX TOPS dump, passing the data onto
+/// channels.
+///
+/// This function can extract two types of data: trade prices (as OHLC ticks)
+/// and system events.
+///
+/// # Arguments
+///
+/// * `dump` - information about the dump to be processed.
+/// * `ticks` - trade prices OHLC ticks output.
+/// * `system_events` - system events output.
+/// * `tick_period` - the length of each OHLC tick.
+/// * `extract_ticks` - whether to extract and send tick data.
+/// * `extract_system_events` - whether to extract and send system events.
 pub(crate) async fn read_dump(
     dump: &DumpMetadata,
     ticks: kanal::Sender<(String, Tick)>,
+    system_events: kanal::Sender<SystemEvent>,
     tick_period: chrono::TimeDelta,
+    targets: DataTargets,
 ) -> anyhow::Result<()> {
     // Start fetching the dump
     let response = isahc::get_async(dump.link.clone())
@@ -326,8 +355,16 @@ pub(crate) async fn read_dump(
 
     // Parse and handle each PCAP block
     let sync_decompressed_data = SyncIoBridge::new(decompressed_data);
-    tokio::task::spawn_blocking(move || extract_ticks(sync_decompressed_data, ticks, tick_period))
-        .await??;
+    tokio::task::spawn_blocking(move || {
+        extract_ticks_and_events(
+            sync_decompressed_data,
+            ticks,
+            system_events,
+            tick_period,
+            targets,
+        )
+    })
+    .await??;
 
     Ok(())
 }

@@ -650,8 +650,8 @@ dependencies = [
 
 [[package]]
 name = "iex-parser"
-version = "0.2.0"
-source = "git+https://github.com/AmitDIRTYC0W/iex-parser-rs.git#51f63a689e9a24a231cfee2218a6eef712dc6d04"
+version = "0.3.1"
+source = "git+https://github.com/AmitDIRTYC0W/iex-parser-rs.git#6d96816725f61511de6810b962efca0ef13d8ed2"
 dependencies = [
  "chrono",
  "float_eq",

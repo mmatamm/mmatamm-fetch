@@ -5,6 +5,7 @@
 #![feature(duration_constructors)]
 
 mod concurrent_for_each;
+mod data_targets;
 mod hist;
 mod ingress;
 mod ohlc;
@@ -14,15 +15,16 @@ use std::{intrinsics::unlikely, path::PathBuf, time::Duration};
 
 use anyhow::{bail, Context};
 use chrono::{NaiveDate, TimeDelta};
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use concurrent_for_each::concurrent_for_each;
+use data_targets::DataTargets;
 use flexi_logger::{colored_detailed_format, json_format, FileSpec, LogSpecification, Logger};
 use hist::DumpMetadata;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use indicatif_log_bridge::LogWrapper;
-use ingress::ingress_regularly;
+use ingress::{ingress_regularly, pseudo_ingress};
 use isahc::AsyncReadResponseExt;
-use log::{error, warn};
+use log::{error, info, warn};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -54,6 +56,14 @@ struct Args {
     /// After aggregating this amount of bytes, flush them to the database
     #[arg(long, default_value_t = 10_000)]
     flush_threshold: usize,
+
+    /// Do not compute and upload OHLC ticks of trade prices
+    #[arg(long = "no-trade-prices", action=ArgAction::SetFalse)]
+    upload_trade_prices: bool,
+
+    /// Do not upload system events (e.g. regular hours start/end) to a dedicated table
+    #[arg(long = "no-system-events", action=ArgAction::SetFalse)]
+    upload_system_events: bool,
 }
 
 /// Checks if a dump file should be processed based on the provided arguments.
@@ -124,19 +134,30 @@ async fn main() -> anyhow::Result<()> {
         .filter(|dump| filter_dump(dump, args.from, args.until))
         .collect();
 
+    // FIX 1000 is a magic number!
     let (ticks_sender, ticks_receiver) = kanal::bounded(1000);
+    let (events_sender, events_receiver) = kanal::bounded(1000);
 
     let sender = {
         let result = questdb::ingress::Sender::from_env();
 
         if result.is_err() {
-            warn!("You might need to set an environment variable 'QDB_CLIENT_CONF' with the QuestDB server address. For example, `export QDB_CLIENT_CONF=\"http::addr=localhost:9000;\"`.")
+            warn!("You might need to set an environment variable 'QDB_CLIENT_CONF' with the QuestDB server address. For example, `export QDB_CLIENT_CONF=\"http::addr=localhost:9009;\"`.")
         }
 
         result
     }?;
 
-    tokio::task::spawn_blocking(move || ingress_regularly(sender, ticks_receiver, 10000));
+    let targets = DataTargets {
+        trade_prices: args.upload_trade_prices,
+        system_events: args.upload_system_events,
+    };
+    info!("Uploading the following data targets: {:#?}", targets);
+
+    // tokio::task::spawn_blocking(move || {
+    //     ingress_regularly(sender, ticks_receiver, events_receiver, 10000, targets)
+    // });
+    ingress_regularly(sender, ticks_receiver, events_receiver, 10000, targets).await?;
     // tokio::task::spawn_blocking(move || pseudo_ingress(ticks_receiver));
 
     // Create a sexy progress bar
@@ -155,13 +176,16 @@ async fn main() -> anyhow::Result<()> {
     concurrent_for_each(
         |dump| {
             let local_ticks_sender = ticks_sender.clone();
+            let local_events_sender = events_sender.clone();
             let local_progress_bar = total_progress.clone();
 
             async move {
                 if let Err(err) = process_dump::read_dump(
                     dump,
                     local_ticks_sender,
+                    local_events_sender,
                     TimeDelta::from_std(args.tick_period.into()).unwrap(),
+                    targets,
                 )
                 .await
                 {
